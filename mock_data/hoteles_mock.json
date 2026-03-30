@@ -1,0 +1,52 @@
+{
+  "saved_query": {
+    "destination": "Roma",
+    "check_in_date": "2026-03-24",
+    "check_out_date": "2026-03-28",
+    "adults": 2
+  },
+  "mock_options": [
+    {
+      "name": "Virtus Prestige - Rooms Apartments - Junior Suite with Private Pool",
+      "rating": 5,
+      "price_per_night": "75 €",
+      "total_rate": "299 €",
+      "type": "vacation rental"
+    },
+    {
+      "name": "Aparthotel Adagio Roma Vatican",
+      "rating": 4.1,
+      "price_per_night": "90 €",
+      "total_rate": "359 €",
+      "type": "hotel"
+    },
+    {
+      "name": "ROMA GONDOLA SRLS - Deluxe Double or Twin Room",
+      "rating": 5,
+      "price_per_night": "90 €",
+      "total_rate": "358 €",
+      "type": "vacation rental"
+    },
+    {
+      "name": "Roma Imperial Suites - Quadruple Room with Balcony",
+      "rating": 5,
+      "price_per_night": "91 €",
+      "total_rate": "363 €",
+      "type": "vacation rental"
+    },
+    {
+      "name": "Terminal guest houst 2 - Economy Double Room",
+      "rating": "N/D",
+      "price_per_night": "63 €",
+      "total_rate": "252 €",
+      "type": "vacation rental"
+    },
+    {
+      "name": "Roma Talenti Fucini",
+      "rating": 4.6,
+      "price_per_night": "102 €",
+      "total_rate": "408 €",
+      "type": "hotel"
+    }
+  ]
+}

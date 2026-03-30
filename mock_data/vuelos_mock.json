@@ -1,0 +1,68 @@
+{
+  "saved_query": {
+    "origin": "ALC",
+    "destination": "FCO",
+    "departure_date": "2026-03-24",
+    "return_date": "2026-03-28",
+    "adults": 1
+  },
+  "mock_options": [
+    {
+      "airline": "Vueling",
+      "price": 249,
+      "duration": 855,
+      "stops": [
+        {
+          "duration": 595,
+          "name": "Aeropuerto de Paris-Orly",
+          "id": "ORY",
+          "overnight": true
+        }
+      ]
+    },
+    {
+      "airline": "Ryanair",
+      "price": 293,
+      "duration": 130,
+      "stops": []
+    },
+    {
+      "airline": "SWISS",
+      "price": 343,
+      "duration": 775,
+      "stops": [
+        {
+          "duration": 545,
+          "name": "Aeropuerto de Zurich",
+          "id": "ZRH",
+          "overnight": true
+        }
+      ]
+    },
+    {
+      "airline": "Vueling",
+      "price": 413,
+      "duration": 260,
+      "stops": [
+        {
+          "duration": 80,
+          "name": "Aeropuerto Josep Tarradellas Barcelona-El Prat",
+          "id": "BCN"
+        }
+      ]
+    },
+    {
+      "airline": "Brussels Airlines",
+      "price": 427,
+      "duration": 1205,
+      "stops": [
+        {
+          "duration": 925,
+          "name": "Aeropuerto de Bruselas",
+          "id": "BRU",
+          "overnight": true
+        }
+      ]
+    }
+  ]
+}
