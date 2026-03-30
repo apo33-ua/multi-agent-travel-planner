@@ -20,3 +20,6 @@ env/
 # Tool caches
 .pytest_cache/
 .mypy_cache/
+
+# Runtime travel cache
+data/cache/
