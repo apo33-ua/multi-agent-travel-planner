@@ -1,0 +1,37 @@
+{
+  "saved_query": {
+    "ciudad": "Roma",
+    "tipo": "current"
+  },
+  "mock_current": {
+    "ciudad": "Roma",
+    "descripcion": "cielos despejados",
+    "temp": 18.4,
+    "feels_like": 17.9,
+    "humedad": 55,
+    "viento": 3.2
+  },
+  "mock_forecast": {
+    "ciudad": "Roma",
+    "items": [
+      {
+        "dt_txt": "2026-03-24 12:00:00",
+        "main": {"temp": 17.8, "feels_like": 17.1, "humidity": 58},
+        "weather": [{"description": "parcialmente nublado"}],
+        "wind": {"speed": 2.9}
+      },
+      {
+        "dt_txt": "2026-03-25 12:00:00",
+        "main": {"temp": 19.5, "feels_like": 19.0, "humidity": 50},
+        "weather": [{"description": "despejado"}],
+        "wind": {"speed": 3.1}
+      },
+      {
+        "dt_txt": "2026-03-26 12:00:00",
+        "main": {"temp": 20.2, "feels_like": 20.0, "humidity": 48},
+        "weather": [{"description": "soleado"}],
+        "wind": {"speed": 2.5}
+      }
+    ]
+  }
+}
