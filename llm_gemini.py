@@ -1,10 +1,15 @@
 import os
+import time
 from typing import List, Sequence, Tuple
 
 from google.genai.errors import APIError as GeminiAPIError
 from langchain_core.messages import BaseMessage
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_google_genai.chat_models import ChatGoogleGenerativeAIError
+from langsmith import traceable
+
+# Errores que justifican reintentar el mismo modelo antes de saltar al siguiente
+_TRANSIENT_HINTS = ("503", "429", "RESOURCE_EXHAUSTED", "UNAVAILABLE", "Deadline", "DEADLINE_EXCEEDED")
 
 
 def require_env(var_name: str) -> str:
@@ -19,11 +24,9 @@ def require_env(var_name: str) -> str:
 def build_llm(model_name: str) -> ChatGoogleGenerativeAI:
     require_env("GOOGLE_API_KEY")
     timeout_seconds = float(os.getenv("GEMINI_TIMEOUT_SECONDS", "30"))
-    retries = int(os.getenv("GEMINI_RETRIES", "0"))
     return ChatGoogleGenerativeAI(
         model=model_name,
         request_timeout=timeout_seconds,
-        retries=retries,
     )
 
 
@@ -47,17 +50,39 @@ def candidate_models() -> List[str]:
     return unique
 
 
+def _is_transient(exc: Exception) -> bool:
+    text = str(exc)
+    return any(hint in text for hint in _TRANSIENT_HINTS)
+
+
+@traceable(name="invoke_with_fallback", run_type="llm")
 def invoke_with_fallback(messages: Sequence[BaseMessage]) -> Tuple[str, str]:
-    errors = []
+    """Invoca Gemini con doble capa de resiliencia:
+    1) Reintentos con backoff exponencial sobre el mismo modelo ante errores transitorios.
+    2) Fallback en cascada al siguiente modelo candidato si la lista de reintentos se agota.
+    Decorado con @traceable para trazabilidad en LangSmith (activo si LANGCHAIN_TRACING_V2=true).
+    """
+    # GEMINI_RETRIES=0 significa "sin reintentos" → 1 intento total
+    max_attempts = max(1, int(os.getenv("GEMINI_RETRIES", "3")))
+    base_delay = float(os.getenv("GEMINI_BACKOFF_BASE_SECONDS", "1.5"))
+    errors: list[str] = []
+
     for model_name in candidate_models():
         llm = build_llm(model_name)
-        try:
-            response = llm.invoke(list(messages))
-            return model_name, response.content
-        except (ChatGoogleGenerativeAIError, GeminiAPIError, TimeoutError, ConnectionError) as exc:
-            errors.append(f"{model_name}: {exc}")
-        except Exception as exc:
-            errors.append(f"{model_name}: {exc}")
+        for attempt in range(1, max_attempts + 1):
+            try:
+                response = llm.invoke(list(messages))
+                return model_name, response.content
+            except (ChatGoogleGenerativeAIError, GeminiAPIError, TimeoutError, ConnectionError) as exc:
+                errors.append(f"{model_name} intento {attempt}: {exc}")
+                # Solo aplica backoff si es transitorio y aun quedan intentos
+                if attempt < max_attempts and _is_transient(exc):
+                    time.sleep(base_delay * (2 ** (attempt - 1)))
+                    continue
+                break  # error no transitorio o intentos agotados -> siguiente modelo
+            except Exception as exc:
+                errors.append(f"{model_name} intento {attempt}: {exc}")
+                break
 
     combined_errors = " | ".join(errors)
     if "API_KEY_INVALID" in combined_errors or "API Key not found" in combined_errors:

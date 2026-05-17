@@ -19,12 +19,14 @@ def run_tourism_agent(ciudad: str, contexto_viaje: str = "") -> str:
 
     model, content = invoke_with_fallback(
         [
+            #Define comportamiento general del asistente
             SystemMessage(
                 content=(
                     "Eres un experto en turismo urbano. Priorizas lugares reales, "
                     "bien conocidos y utiles para un itinerario corto."
                 )
             ),
+            #Prompt detallado con instrucciones y contexto
             HumanMessage(content=prompt),
         ]
     )
@@ -32,11 +34,15 @@ def run_tourism_agent(ciudad: str, contexto_viaje: str = "") -> str:
 
 
 if __name__ == "__main__":
-    ciudad = input("Ciudad destino: ").strip()
-    contexto = input("Contexto del viaje (opcional): ").strip()
+    import argparse
+    import logging
 
-    if not ciudad:
-        raise SystemExit("Debes indicar una ciudad.")
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s", datefmt="%H:%M:%S")
+
+    parser = argparse.ArgumentParser(description="Agente turistico")
+    parser.add_argument("ciudad", help="Ciudad destino (ej. Roma)")
+    parser.add_argument("--contexto", default="", help="Contexto del viaje")
+    args = parser.parse_args()
 
     print("\n--- PROPUESTA TURISTICA ---")
-    print(run_tourism_agent(ciudad, contexto))
+    print(run_tourism_agent(args.ciudad, args.contexto))

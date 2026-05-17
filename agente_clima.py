@@ -1,12 +1,18 @@
+import json
 import os
 from datetime import date, datetime
 from typing import Dict
 
 import requests
 
+from travel_cache import read_cache, write_cache
+
 OPENWEATHER_URL = "https://api.openweathermap.org/data/2.5/weather"
 OPENWEATHER_FORECAST_URL = "https://api.openweathermap.org/data/2.5/forecast"
 FORECAST_MAX_DAYS = 5
+
+CURRENT_CACHE_TTL_SECONDS = int(os.getenv("TRAVEL_CACHE_TTL_WEATHER_CURRENT_SECONDS", str(30 * 60)))
+FORECAST_CACHE_TTL_SECONDS = int(os.getenv("TRAVEL_CACHE_TTL_WEATHER_FORECAST_SECONDS", str(3 * 3600)))
 
 
 def _require_env(var_name: str) -> str:
@@ -19,27 +25,29 @@ def _require_env(var_name: str) -> str:
     return value
 
 
-def fetch_weather_data(ciudad: str, openweather_api_key: str) -> Dict[str, object]:
+def _data_mode() -> str:
+    return os.getenv("TRAVEL_DATA_MODE", "cache").lower().strip()
+
+
+def _load_mock_weather() -> Dict[str, object]:
+    path = os.path.join("mock_data", "clima_mock.json")
+    with open(path, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+def _fetch_weather_live(ciudad: str, openweather_api_key: str) -> Dict[str, object]:
     params = {
         "q": ciudad,
         "appid": openweather_api_key,
         "units": "metric",
         "lang": "es",
     }
-
-    try:
-        response = requests.get(OPENWEATHER_URL, params=params, timeout=15)
-        response.raise_for_status()
-    except requests.RequestException as exc:
-        raise RuntimeError(
-            f"No se pudo obtener el clima de {ciudad} desde OpenWeather: {exc}"
-        ) from exc
-
+    response = requests.get(OPENWEATHER_URL, params=params, timeout=15)
+    response.raise_for_status()
     data = response.json()
     main = data.get("main", {})
     weather = data.get("weather", [{}])[0]
     wind = data.get("wind", {})
-
     return {
         "ciudad": data.get("name", ciudad),
         "descripcion": weather.get("description", "sin descripcion"),
@@ -50,32 +58,85 @@ def fetch_weather_data(ciudad: str, openweather_api_key: str) -> Dict[str, objec
     }
 
 
-def fetch_forecast_data(ciudad: str, openweather_api_key: str) -> Dict[str, object]:
+def fetch_weather_data(ciudad: str, openweather_api_key: str) -> Dict[str, object]:
+    """Obtiene clima actual con patron Live/Cache/Mock (RNF-02)."""
+    mode = _data_mode()
+    cache_key = {"endpoint": "current", "ciudad": ciudad.strip().lower()}
+
+    if mode == "mock":
+        mock = _load_mock_weather()
+        return {**mock["mock_current"], "_source": "mock"}
+
+    cached = read_cache("weather", cache_key, CURRENT_CACHE_TTL_SECONDS)
+
+    if mode == "cache":
+        if cached:
+            return {**cached, "_source": "cache"}
+        mock = _load_mock_weather()
+        return {**mock["mock_current"], "_source": "mock"}
+
+    # mode == "live": intenta API, degrada a cache (incluso obsoleta) y luego mock
+    try:
+        live = _fetch_weather_live(ciudad, openweather_api_key)
+        write_cache("weather", cache_key, live)
+        return {**live, "_source": "live"}
+    except requests.RequestException:
+        if cached:
+            return {**cached, "_source": "cache-degraded"}
+        # leer cache obsoleta como ultimo recurso antes del mock
+        stale = read_cache("weather", cache_key, ttl_seconds=10**9)
+        if stale:
+            return {**stale, "_source": "cache-stale"}
+        mock = _load_mock_weather()
+        return {**mock["mock_current"], "_source": "mock-degraded"}
+
+
+def _fetch_forecast_live(ciudad: str, openweather_api_key: str) -> Dict[str, object]:
     params = {
         "q": ciudad,
         "appid": openweather_api_key,
         "units": "metric",
         "lang": "es",
     }
-
-    try:
-        response = requests.get(OPENWEATHER_FORECAST_URL, params=params, timeout=15)
-        response.raise_for_status()
-    except requests.RequestException as exc:
-        raise RuntimeError(
-            f"No se pudo obtener el forecast de {ciudad} desde OpenWeather: {exc}"
-        ) from exc
-
+    response = requests.get(OPENWEATHER_FORECAST_URL, params=params, timeout=15)
+    response.raise_for_status()
     data = response.json()
     items = data.get("list", [])
     if not items:
         raise RuntimeError("OpenWeather no devolvio puntos de forecast.")
-
     city_info = data.get("city", {})
-    return {
-        "ciudad": city_info.get("name", ciudad),
-        "items": items,
-    }
+    return {"ciudad": city_info.get("name", ciudad), "items": items}
+
+
+def fetch_forecast_data(ciudad: str, openweather_api_key: str) -> Dict[str, object]:
+    """Obtiene forecast con patron Live/Cache/Mock (RNF-02)."""
+    mode = _data_mode()
+    cache_key = {"endpoint": "forecast", "ciudad": ciudad.strip().lower()}
+
+    if mode == "mock":
+        mock = _load_mock_weather()
+        return {**mock["mock_forecast"], "_source": "mock"}
+
+    cached = read_cache("weather", cache_key, FORECAST_CACHE_TTL_SECONDS)
+
+    if mode == "cache":
+        if cached:
+            return {**cached, "_source": "cache"}
+        mock = _load_mock_weather()
+        return {**mock["mock_forecast"], "_source": "mock"}
+
+    try:
+        live = _fetch_forecast_live(ciudad, openweather_api_key)
+        write_cache("weather", cache_key, live)
+        return {**live, "_source": "live"}
+    except (requests.RequestException, RuntimeError):
+        if cached:
+            return {**cached, "_source": "cache-degraded"}
+        stale = read_cache("weather", cache_key, ttl_seconds=10**9)
+        if stale:
+            return {**stale, "_source": "cache-stale"}
+        mock = _load_mock_weather()
+        return {**mock["mock_forecast"], "_source": "mock-degraded"}
 
 
 def _parse_iso_date(value: str) -> date:
@@ -88,7 +149,13 @@ def _parse_iso_date(value: str) -> date:
 
 
 def _select_forecast_for_date(items: list[dict], target: date) -> dict:
-    same_day = []
+    """Selecciona el bloque de forecast mas cercano a la fecha objetivo.
+
+    Prioriza misma fecha al mediodia; si no hay, se queda con el bloque
+    mas proximo en el tiempo. Asi se evita reventar el grafo cuando la API
+    o el mock no contienen exactamente la fecha solicitada.
+    """
+    parsed: list[tuple[dict, datetime]] = []
     for item in items:
         dt_txt = item.get("dt_txt")
         if not dt_txt:
@@ -97,17 +164,20 @@ def _select_forecast_for_date(items: list[dict], target: date) -> dict:
             dt = datetime.strptime(dt_txt, "%Y-%m-%d %H:%M:%S")
         except ValueError:
             continue
-        if dt.date() == target:
-            same_day.append((item, dt))
+        parsed.append((item, dt))
 
+    if not parsed:
+        raise RuntimeError("Sin bloques de forecast utilizables en la respuesta.")
+
+    same_day = [pair for pair in parsed if pair[1].date() == target]
     if same_day:
-        target_hour = 12
-        best_item, _best_dt = min(same_day, key=lambda pair: abs(pair[1].hour - target_hour))
-        return best_item
+        return min(same_day, key=lambda pair: abs(pair[1].hour - 12))[0]
 
-    raise RuntimeError(
-        "No hay bloques de forecast exactos para la fecha solicitada."
-    )
+    # Fallback: bloque mas cercano en el tiempo
+    target_dt = datetime.combine(target, datetime.min.time()).replace(hour=12)
+    return min(parsed, key=lambda pair: abs((pair[1] - target_dt).total_seconds()))[0]
+
+
 def weather_summary(weather_data: dict) -> str:
     return (
         f"Clima actual en {weather_data['ciudad']}: {weather_data['descripcion']}. "
@@ -140,16 +210,24 @@ def fallback_no_real_weather(ciudad: str, fecha_objetivo: date, days_ahead: int)
 
 def run_climate_agent(ciudad: str, fecha_objetivo: str = "") -> str:
     """
-    Agente meteorologico especializado con 3 modos:
+    Agente meteorologico con 3 modos:
     - modo_actual: si no se pasa fecha.
     - modo_forecast: si fecha objetivo esta dentro de 5 dias.
-    - fallback: si fecha objetivo esta mas lejos y no hay clima real disponible.
+    - fallback: si fecha objetivo esta mas lejos.
+
+    Datos servidos via patron Live/Cache/Mock segun TRAVEL_DATA_MODE.
+    En modo 'mock' la API key no es necesaria.
     """
-    openweather_api_key = _require_env("OPENWEATHER_API_KEY")
+    mode = _data_mode()
+    if mode == "mock":
+        openweather_api_key = os.getenv("OPENWEATHER_API_KEY", "MOCK")
+    else:
+        openweather_api_key = _require_env("OPENWEATHER_API_KEY")
 
     if not fecha_objetivo.strip():
         weather_data = fetch_weather_data(ciudad, openweather_api_key)
-        return "[modo_actual]\n" + weather_summary(weather_data)
+        source = weather_data.pop("_source", "live")
+        return f"[modo_actual | fuente:{source}]\n" + weather_summary(weather_data)
 
     target = _parse_iso_date(fecha_objetivo)
     days_ahead = (target - date.today()).days
@@ -161,9 +239,10 @@ def run_climate_agent(ciudad: str, fecha_objetivo: str = "") -> str:
 
     if days_ahead <= FORECAST_MAX_DAYS:
         forecast_data = fetch_forecast_data(ciudad, openweather_api_key)
+        source = forecast_data.pop("_source", "live")
         item = _select_forecast_for_date(forecast_data["items"], target)
         summary = forecast_summary(forecast_data["ciudad"], target, item)
-        return "[modo_forecast]\n" + summary
+        return f"[modo_forecast | fuente:{source}]\n" + summary
 
     return "[modo_sin_clima_real_disponible]\n" + fallback_no_real_weather(
         ciudad,
@@ -173,15 +252,17 @@ def run_climate_agent(ciudad: str, fecha_objetivo: str = "") -> str:
 
 
 if __name__ == "__main__":
-    print("Iniciando agente meteorologico...\n")
+    import argparse
+    import logging as _logging
 
-    ciudad = input("Ciudad destino: ").strip()
-    fecha_objetivo = input("Fecha objetivo (YYYY-MM-DD, opcional): ").strip()
+    _logging.basicConfig(level=_logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s", datefmt="%H:%M:%S")
 
-    if not ciudad:
-        raise SystemExit("Debes indicar una ciudad.")
+    parser = argparse.ArgumentParser(description="Agente meteorologico")
+    parser.add_argument("ciudad", help="Ciudad destino (ej. Roma)")
+    parser.add_argument("--fecha", default="", dest="fecha_objetivo", metavar="YYYY-MM-DD", help="Fecha objetivo (opcional)")
+    args = parser.parse_args()
 
-    clima = run_climate_agent(ciudad, fecha_objetivo)
+    clima = run_climate_agent(args.ciudad, args.fecha_objetivo)
 
     print("\n--- REPORTE DE CLIMA ---")
     print(clima)

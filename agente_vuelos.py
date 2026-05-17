@@ -9,12 +9,18 @@ from travel_cache import read_cache, write_cache
 FLIGHTS_CACHE_TTL_SECONDS = int(os.getenv("TRAVEL_CACHE_TTL_FLIGHTS_SECONDS", str(12 * 3600)))
 
 
+def _data_mode() -> str:
+    return os.getenv("TRAVEL_DATA_MODE", "cache").lower().strip()
+
+
+#Cargar mock local
 def _load_mock_flights() -> dict[str, Any]:
     path = os.path.join("mock_data", "vuelos_mock.json")
     with open(path, "r", encoding="utf-8") as f:
         return json.load(f)
 
 
+#Transformar datos de SerpApi a formato simple
 def _normalize_flight_items(data: dict[str, Any]) -> list[dict[str, Any]]:
     items: list[dict[str, Any]] = []
 
@@ -44,7 +50,15 @@ def search_flights(
     return_date: str = "",
     adults: int = 1,
 ) -> dict[str, Any]:
-    mode = os.getenv("TRAVEL_DATA_MODE", "cache").lower().strip()
+    """Busca vuelos via Live/Cache/Mock (RNF-02).
+
+    Modos:
+    - mock: solo devuelve datos simulados.
+    - cache: lee cache fresca; si no hay, cae a mock.
+    - live: llama a SerpApi; si falla degrada a cache fresca,
+            luego a cache obsoleta y por ultimo a mock.
+    """
+    mode = _data_mode()
 
     query_key = {
         "engine": "google_flights",
@@ -55,23 +69,19 @@ def search_flights(
         "adults": adults,
     }
 
+    if mode == "mock":
+        mock = _load_mock_flights()
+        return {"source": "mock", "query": query_key, "options": _normalize_flight_items(mock)}
+
     cached = read_cache("flights", query_key, FLIGHTS_CACHE_TTL_SECONDS)
 
-    if mode == "cache" and cached:
-        return {
-            "source": "cache",
-            "query": query_key,
-            "options": _normalize_flight_items(cached),
-        }
-
-    if mode == "cache" and not cached:
+    if mode == "cache":
+        if cached:
+            return {"source": "cache", "query": query_key, "options": _normalize_flight_items(cached)}
         mock = _load_mock_flights()
-        return {
-            "source": "mock",
-            "query": query_key,
-            "options": _normalize_flight_items(mock),
-        }
+        return {"source": "mock", "query": query_key, "options": _normalize_flight_items(mock)}
 
+    # mode == "live": intenta API y degrada en cascada
     params = {
         "engine": "google_flights",
         "departure_id": origin,
@@ -86,22 +96,34 @@ def search_flights(
     if return_date:
         params["return_date"] = return_date
 
-    live = serpapi_search(params)
-    write_cache("flights", query_key, live)
-
-    return {
-        "source": "live",
-        "query": query_key,
-        "options": _normalize_flight_items(live),
-    }
+    try:
+        live = serpapi_search(params)
+        write_cache("flights", query_key, live)
+        return {"source": "live", "query": query_key, "options": _normalize_flight_items(live)}
+    except RuntimeError:
+        if cached:
+            return {"source": "cache-degraded", "query": query_key, "options": _normalize_flight_items(cached)}
+        stale = read_cache("flights", query_key, ttl_seconds=10**9)
+        if stale:
+            return {"source": "cache-stale", "query": query_key, "options": _normalize_flight_items(stale)}
+        mock = _load_mock_flights()
+        return {"source": "mock-degraded", "query": query_key, "options": _normalize_flight_items(mock)}
 
 
 if __name__ == "__main__":
-    origin = input("Origen (ej. MAD): ").strip()
-    destination = input("Destino (ej. FCO): ").strip()
-    departure = input("Fecha salida (YYYY-MM-DD): ").strip()
-    ret = input("Fecha vuelta (YYYY-MM-DD, opcional): ").strip()
+    import argparse
+    import logging
 
-    result = search_flights(origin, destination, departure, ret)
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s", datefmt="%H:%M:%S")
+
+    parser = argparse.ArgumentParser(description="Agente de vuelos")
+    parser.add_argument("origen", help="IATA origen (ej. MAD)")
+    parser.add_argument("destino", help="IATA destino (ej. FCO)")
+    parser.add_argument("salida", metavar="YYYY-MM-DD", help="Fecha de salida")
+    parser.add_argument("--vuelta", default="", metavar="YYYY-MM-DD", help="Fecha de vuelta (opcional)")
+    parser.add_argument("--adultos", type=int, default=1)
+    args = parser.parse_args()
+
+    result = search_flights(args.origen, args.destino, args.salida, args.vuelta, args.adultos)
     print("\n--- VUELOS ---")
     print(json.dumps(result, ensure_ascii=False, indent=2))
