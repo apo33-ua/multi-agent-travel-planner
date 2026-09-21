@@ -12,7 +12,78 @@
 
 ---
 
-## 📌 Descripción
+
+## Demo
+
+[![Ver demo del proyecto](docs/demo/demo-thumbnail.png)](https://youtu.be/DeOW7qzDR5E)
+
+**▶ Ver vídeo con la demostración completa del sistema**
+
+En esta demo se muestra el funcionamiento del sistema desde la introducción de
+los parámetros del viaje hasta la generación del itinerario final.
+
+---
+
+## Aplicación
+
+### Planificación del viaje
+
+![Aplicación - Planificación del viaje](docs/demo/travel-planner.png)
+
+El usuario introduce el destino, fechas, presupuesto, número de viajeros y
+describe en lenguaje natural el objetivo del viaje.
+
+### Resultado generado
+
+![Resultado de la planificación](docs/demo/travel-result.png)
+
+El sistema combina la información obtenida por los diferentes agentes y genera
+un plan de viaje estructurado.
+
+
+---
+
+## Arquitectura del sistema
+
+El sistema utiliza una arquitectura multiagente basada en **LangGraph**, donde un
+supervisor coordina diferentes agentes especializados según las características
+de cada petición.
+
+![Arquitectura del sistema](docs/demo/architecture.png)
+
+### Flujo de ejecución
+
+1. **Supervisor / Router**  
+   Analiza la petición del usuario y determina qué agentes deben ejecutarse.
+
+2. **Agente turístico**  
+   Genera el contexto y las recomendaciones relacionadas con el destino y el
+   propósito del viaje.
+
+3. **Agente de vuelos**  
+   Consulta y procesa opciones de vuelos mediante SerpApi.
+
+4. **Agente de hoteles**  
+   Consulta y procesa opciones de alojamiento mediante SerpApi.
+
+5. **Agente meteorológico**  
+   Obtiene la previsión meteorológica mediante OpenWeather cuando el horizonte
+   temporal del viaje lo permite.
+
+6. **Nodo presupuestario**  
+   Calcula y valida las combinaciones de vuelos y hoteles frente al presupuesto
+   indicado utilizando lógica determinista en Python.
+
+7. **Nodo de síntesis**  
+   Integra los resultados obtenidos y genera el itinerario final estructurado.
+
+El flujo se adapta dinámicamente a cada solicitud. Por ejemplo, el agente
+meteorológico se omite cuando el viaje se encuentra fuera del horizonte de
+previsión utilizado por el sistema, mientras que vuelos y hoteles pueden
+ejecutarse en paralelo para reducir la latencia.
+
+
+## Descripción
 
 Planificar un viaje implica normalmente combinar información procedente de múltiples servicios: vuelos, alojamiento, meteorología y actividades. Este proyecto propone una arquitectura que centraliza ese proceso y permite generar un plan de viaje a partir de una única petición.
 
@@ -22,57 +93,25 @@ El objetivo no es únicamente generar texto, sino **combinar razonamiento genera
 
 ---
 
-## ✨ Características principales
+## Características principales
 
-- 🧠 **Arquitectura multiagente** coordinada mediante LangGraph.
-- 🧭 **Enrutamiento dinámico** en función de la intención del usuario, las fechas y el presupuesto.
-- ✈️ **Búsqueda de vuelos** mediante SerpApi / Google Flights.
-- 🏨 **Búsqueda de hoteles** mediante SerpApi / Google Hotels.
-- 🌦️ **Información meteorológica** mediante OpenWeather.
-- 🤖 **Google Gemini** para interpretación semántica y generación del contenido final.
-- 💶 **Validación presupuestaria determinista** realizada en Python, fuera del LLM.
-- ⚡ **Ejecución en paralelo** de las consultas de vuelos y hoteles.
-- 🔁 **Resiliencia ante fallos** mediante reintentos, backoff exponencial y fallback entre modelos Gemini.
-- 💾 **Modos Live / Cache / Mock** para separar desarrollo, demostración y consumo de APIs reales.
-- 🔐 **Gestión de credenciales mediante variables de entorno**.
-- 📋 **Logging estructurado** para poder seguir la ejecución del grafo.
-- 🧪 **58 pruebas unitarias y de integración** con pytest.
-- 🌐 **API REST** independiente del cliente web.
+- **Arquitectura multiagente** coordinada mediante LangGraph.
+- **Enrutamiento dinámico** en función de la intención del usuario, las fechas y el presupuesto.
+- **Búsqueda de vuelos** mediante SerpApi / Google Flights.
+- **Búsqueda de hoteles** mediante SerpApi / Google Hotels.
+- **Información meteorológica** mediante OpenWeather.
+- **Google Gemini** para interpretación semántica y generación del contenido final.
+- **Validación presupuestaria determinista** realizada en Python, fuera del LLM.
+- **Ejecución en paralelo** de las consultas de vuelos y hoteles.
+- **Resiliencia ante fallos** mediante reintentos, backoff exponencial y fallback entre modelos Gemini.
+- **Modos Live / Cache / Mock** para separar desarrollo, demostración y consumo de APIs reales.
+- **Gestión de credenciales mediante variables de entorno**.
+- **Logging estructurado** para poder seguir la ejecución del grafo.
+- **58 pruebas unitarias y de integración** con pytest.
+- **API REST** independiente del cliente web.
 
 ---
 
-## 🏗️ Arquitectura
-
-La arquitectura separa claramente el **control del flujo** del **conocimiento específico de cada dominio**.
-
-```mermaid
-flowchart TD
-    U[Usuario / Frontend] --> API[API REST /plan]
-    API --> R[Supervisor / Router]
-
-    R --> T[Agente Turístico]
-    R --> F[Agente de Vuelos]
-    R --> H[Agente de Hoteles]
-    R --> W[Agente Meteorológico]
-    R --> B[Nodo Presupuestario]
-
-    F --> S[SerpApi / Google Flights]
-    H --> S2[SerpApi / Google Hotels]
-    W --> O[OpenWeather]
-
-    T --> G[Google Gemini]
-    SYN[Nodo de Síntesis] --> G
-
-    F --> ST[(SupervisorState)]
-    H --> ST
-    W --> ST
-    T --> ST
-    B --> ST
-    R --> ST
-
-    ST --> SYN[Nodo de Síntesis]
-    SYN --> OUT[Itinerario final en Markdown]
-```
 
 ### SupervisorState
 
@@ -92,7 +131,7 @@ Todos los nodos trabajan sobre un estado compartido que acumula la información 
 
 ---
 
-## 🧠 Enrutamiento dinámico
+## Enrutamiento dinámico
 
 El grafo no sigue siempre el mismo camino. El supervisor evalúa la petición y adapta la ejecución.
 
@@ -113,7 +152,7 @@ La petición puede representar una planificación turística completa o una cons
 
 ---
 
-## 💶 Validación presupuestaria determinista
+## Validación presupuestaria determinista
 
 Una decisión de diseño central del proyecto es evitar que el LLM realice operaciones financieras.
 
@@ -140,7 +179,7 @@ El LLM recibe datos ya procesados y validados, no los utiliza como calculadora.
 
 ---
 
-## 🔌 Integraciones externas
+## Integraciones externas
 
 ### Google Gemini
 
@@ -161,7 +200,7 @@ Proporciona información meteorológica para el destino. El supervisor evita con
 
 ---
 
-## 🔄 Estrategia Live / Cache / Mock
+## Estrategia Live / Cache / Mock
 
 Para reducir costes y hacer las pruebas reproducibles, el sistema incorpora tres modos de acceso a datos:
 
@@ -175,7 +214,7 @@ Esta separación permite probar la lógica del sistema sin depender constantemen
 
 ---
 
-## 🛡️ Resiliencia y observabilidad
+## Resiliencia y observabilidad
 
 Las integraciones con modelos y APIs externas pueden fallar. Para evitar que un error puntual derribe todo el grafo, el proyecto incorpora:
 
@@ -190,7 +229,7 @@ Los logs permiten reconstruir el recorrido de una petición y comprobar las deci
 
 ---
 
-## 🧰 Stack tecnológico
+## Stack tecnológico
 
 ### Backend
 
@@ -222,7 +261,7 @@ Los logs permiten reconstruir el recorrido de una petición y comprobar las deci
 
 ---
 
-## 📋 Requisitos previos
+## Requisitos previos
 
 Antes de ejecutar el proyecto necesitas:
 
@@ -237,7 +276,7 @@ El modo `mock` permite trabajar con datos simulados sin depender de las APIs ext
 
 ---
 
-## 🚀 Instalación
+## Instalación
 
 ### 1. Clonar el repositorio
 
@@ -278,7 +317,7 @@ cd ..
 
 ---
 
-## 🔐 Configuración
+## Configuración
 
 Crea un fichero `.env` en la raíz del proyecto:
 
@@ -311,7 +350,7 @@ NEXT_PUBLIC_API_URL=http://127.0.0.1:8000
 
 ---
 
-## ▶️ Ejecución con interfaz web
+## ▶Ejecución con interfaz web
 
 La forma recomendada de utilizar el sistema es mediante la interfaz web.
 
@@ -351,7 +390,7 @@ El frontend envía la petición al endpoint `POST /plan`, el backend ejecuta el 
 
 ---
 
-## ⌨️ Ejecución por CLI
+## Ejecución por CLI
 
 El punto de entrada principal para ejecutar una planificación desde terminal es:
 
@@ -387,7 +426,7 @@ python3 supervisor_viajes.py "Roma" \
 
 ---
 
-## 🧪 Ejecución de agentes individuales
+## Ejecución de agentes individuales
 
 Cada agente puede ejecutarse de forma aislada para facilitar las pruebas y la depuración.
 
@@ -417,7 +456,7 @@ python3 agente_turistico.py "Roma" --contexto "viaje cultural"
 
 ---
 
-## ✅ Pruebas
+## Pruebas
 
 La memoria del proyecto documenta una suite de **58 tests unitarios y de integración**, utilizando mocks para aislar las llamadas a Gemini, SerpApi y OpenWeather.
 
@@ -431,7 +470,7 @@ El modo `mock` permite realizar pruebas reproducibles sin depender de las cuotas
 
 ---
 
-## 🧩 Decisiones técnicas destacadas
+## Decisiones técnicas destacadas
 
 ### Separación entre lógica determinista y generación
 
@@ -447,7 +486,7 @@ Las credenciales, el modo de datos, la selección de modelos, los timeouts y la 
 
 ---
 
-## 📡 API principal
+## API principal
 
 ### `POST /plan`
 
@@ -471,7 +510,7 @@ La salida integra los resultados de los agentes y genera el informe final.
 
 ---
 
-## 🔭 Limitaciones conocidas
+## Limitaciones conocidas
 
 La versión actual mantiene deliberadamente un alcance acotado. Entre las principales limitaciones documentadas se encuentran:
 
@@ -487,34 +526,7 @@ Estas limitaciones forman parte del alcance actual del TFG y no del diseño fund
 
 ---
 
-## 🚧 Trabajo futuro
-
-Las líneas de evolución identificadas en el proyecto incluyen:
-
-- Planificación **multi-ciudad**.
-- Búsqueda con **fechas flexibles** y optimización de precio.
-- Persistencia de planificaciones mediante base de datos.
-- Perfiles de viajero y personalización de recomendaciones.
-- Nuevos agentes especializados: trenes, restaurantes, actividades o transporte interno.
-- Integración de enlaces de afiliación como vía de monetización.
-
-La arquitectura multiagente permite incorporar nuevos dominios añadiendo nuevos nodos y conectándolos al grafo sin tener que rehacer el núcleo del sistema.
-
----
-
-## 🤖 Uso de inteligencia artificial durante el desarrollo
-
-Durante el desarrollo del TFG se utilizaron herramientas de IA generativa como apoyo puntual en:
-
-- Revisión y mejora de la redacción de la memoria.
-- Resolución de errores y tareas de depuración.
-- Propuesta de casos límite para reforzar las pruebas.
-
-La arquitectura, las decisiones técnicas, la lógica de orquestación y la integración de las APIs corresponden al trabajo desarrollado para el proyecto.
-
----
-
-## 📚 Documentación
+## Documentación
 
 La memoria completa del Trabajo de Fin de Grado contiene la documentación detallada de:
 
@@ -530,7 +542,7 @@ La memoria completa del Trabajo de Fin de Grado contiene la documentación detal
 
 ---
 
-## 👤 Autor
+## Autor
 
 **Alejandro Palomares Orugo**  
 Grado en Ingeniería Informática · Universidad de Alicante
@@ -540,7 +552,7 @@ Grado en Ingeniería Informática · Universidad de Alicante
 
 ---
 
-## 📄 Proyecto académico
+## Proyecto académico
 
 Este repositorio contiene el desarrollo del **Trabajo de Fin de Grado** y tiene como objetivo mostrar el diseño e implementación de un sistema multiagente aplicado a la planificación automática de viajes.
 
