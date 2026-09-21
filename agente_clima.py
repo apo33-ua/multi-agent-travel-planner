@@ -9,7 +9,21 @@ from travel_cache import read_cache, write_cache
 
 OPENWEATHER_URL = "https://api.openweathermap.org/data/2.5/weather"
 OPENWEATHER_FORECAST_URL = "https://api.openweathermap.org/data/2.5/forecast"
+OPENWEATHER_GEOCODE_URL = "https://api.openweathermap.org/geo/1.0/direct"
 FORECAST_MAX_DAYS = 5
+
+# El nombre de algunas ciudades es ambiguo en OpenWeather (existe "Roma" en
+# Italia, en Australia y en EE. UU.). Para esos casos fijamos el pais preferido
+# y evitamos que el geocoding resuelva a la ciudad equivocada.
+PAIS_PREFERIDO = {
+    "roma": "IT", "rome": "IT",
+    "paris": "FR", "parís": "FR",
+    "londres": "GB", "london": "GB",
+    "milan": "IT", "milán": "IT",
+    "valencia": "ES",
+    "santiago": "ES",
+    "cordoba": "ES", "córdoba": "ES",
+}
 
 CURRENT_CACHE_TTL_SECONDS = int(os.getenv("TRAVEL_CACHE_TTL_WEATHER_CURRENT_SECONDS", str(30 * 60)))
 FORECAST_CACHE_TTL_SECONDS = int(os.getenv("TRAVEL_CACHE_TTL_WEATHER_FORECAST_SECONDS", str(3 * 3600)))
@@ -35,9 +49,44 @@ def _load_mock_weather() -> Dict[str, object]:
         return json.load(f)
 
 
+def _resolver_coordenadas(ciudad: str, openweather_api_key: str) -> tuple[float, float, str, str]:
+    """Resuelve el nombre de la ciudad a coordenadas con la Geocoding API.
+
+    Devuelve (lat, lon, nombre, pais). Si el nombre es ambiguo (p. ej. 'Roma')
+    se prioriza el pais definido en PAIS_PREFERIDO; en otro caso, el primer
+    resultado que devuelve OpenWeather.
+    """
+    response = requests.get(
+        OPENWEATHER_GEOCODE_URL,
+        params={"q": ciudad, "limit": 5, "appid": openweather_api_key},
+        timeout=15,
+    )
+    response.raise_for_status()
+    resultados = response.json()
+    if not resultados:
+        raise RuntimeError(f"OpenWeather no encontro la ciudad '{ciudad}'.")
+
+    preferido = PAIS_PREFERIDO.get(ciudad.strip().lower())
+    elegido = resultados[0]
+    if preferido:
+        for r in resultados:
+            if r.get("country") == preferido:
+                elegido = r
+                break
+
+    return (
+        elegido["lat"],
+        elegido["lon"],
+        elegido.get("name", ciudad),
+        elegido.get("country", ""),
+    )
+
+
 def _fetch_weather_live(ciudad: str, openweather_api_key: str) -> Dict[str, object]:
+    lat, lon, nombre, _pais = _resolver_coordenadas(ciudad, openweather_api_key)
     params = {
-        "q": ciudad,
+        "lat": lat,
+        "lon": lon,
         "appid": openweather_api_key,
         "units": "metric",
         "lang": "es",
@@ -49,7 +98,7 @@ def _fetch_weather_live(ciudad: str, openweather_api_key: str) -> Dict[str, obje
     weather = data.get("weather", [{}])[0]
     wind = data.get("wind", {})
     return {
-        "ciudad": data.get("name", ciudad),
+        "ciudad": data.get("name") or nombre,
         "descripcion": weather.get("description", "sin descripcion"),
         "temp": main.get("temp", "N/D"),
         "feels_like": main.get("feels_like", "N/D"),
@@ -92,8 +141,10 @@ def fetch_weather_data(ciudad: str, openweather_api_key: str) -> Dict[str, objec
 
 
 def _fetch_forecast_live(ciudad: str, openweather_api_key: str) -> Dict[str, object]:
+    lat, lon, nombre, _pais = _resolver_coordenadas(ciudad, openweather_api_key)
     params = {
-        "q": ciudad,
+        "lat": lat,
+        "lon": lon,
         "appid": openweather_api_key,
         "units": "metric",
         "lang": "es",
@@ -105,7 +156,7 @@ def _fetch_forecast_live(ciudad: str, openweather_api_key: str) -> Dict[str, obj
     if not items:
         raise RuntimeError("OpenWeather no devolvio puntos de forecast.")
     city_info = data.get("city", {})
-    return {"ciudad": city_info.get("name", ciudad), "items": items}
+    return {"ciudad": city_info.get("name") or nombre, "items": items}
 
 
 def fetch_forecast_data(ciudad: str, openweather_api_key: str) -> Dict[str, object]:
